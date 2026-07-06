@@ -1,0 +1,2 @@
+
+#define KSTACKSIZE 0x1000
