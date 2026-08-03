@@ -33,5 +33,5 @@ void tss_init(void){
 	gdt.entry[6].base_high = addr >> 24;
 	gdt.entry_high.base_highest = addr >> 32;
 
-	asm volatile("ltr %0" :: "r" ((uint16_t)0x30));
+	asm volatile("ltr %%ax" :: "a" (0x30));
 }

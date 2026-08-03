@@ -3,9 +3,9 @@
 
 #define DPL_USER 0x3
 
-#define PGSIZE 0x1000
-#define PGSIZE_LARGE 0x200000
-#define PGSIZE_HUGE 0x40000000
+#define PGSIZE 			0x1000
+#define PGSIZE_LARGE 	0x200000
+#define PGSIZE_HUGE 	0x40000000
 
 #define PTE_P 	0x001
 #define PTE_W	0x002

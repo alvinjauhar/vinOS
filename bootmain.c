@@ -11,17 +11,21 @@ void *memset(void *addr, int c, size_t n);
 
 void bootmain(void){
 
+	uint16_t *crt = (void*) 0xb8000;
+
 	struct elfhdr *elf = (void*)0x10000;
 	readsegment((void*)elf, 0, sizeof(*elf));
-	if (elf->magic != ELF_MAGIC)
+	if (elf->magic != ELF_MAGIC){
+		crt[0] = 0x0f00 | 'E';
 		return;
+	}
 
 	struct proghdr *ph, *eph;
-	ph = (void*)((uint8_t*)elf + elf->phoff);
+	ph = (void*)((uintptr_t)elf + elf->phoff);
 	eph = ph + elf->phnum;
 	for (;ph < eph; ph++){
 		readsegment((void*)ph->paddr, ph->offset, ph->filesz);
-		if (ph->memsz > ph->filesz)
+ 		if (ph->memsz > ph->filesz)
 			memset((uint8_t*)ph->paddr+ph->filesz, 0, ph->memsz-ph->filesz);
 	}
 
@@ -49,7 +53,7 @@ void readsector(void *addr, size_t sector){
 void readsegment(uint8_t *pa, size_t offset, size_t size){
 
 	uint8_t *epa = pa + size;
-	size_t sector = 27 + offset/SECTSIZE;
+	size_t sector = 3 + offset/SECTSIZE;
 
 	for (; pa < epa; pa += SECTSIZE, sector++)
 		readsector(pa, sector);
@@ -77,3 +81,4 @@ void *memset(void *addr, int c, size_t n){
 
 	return addr;
 }
+

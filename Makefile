@@ -12,7 +12,6 @@ C_OBJS := \
 	string.o \
 	syscall.o \
 	sysfile.o \
-	systask.o \
 	uart.o \
 	vm.o \
 
@@ -31,7 +30,7 @@ LDFLAGS =
 vin.img: boot kernel
 	dd if=/dev/zero of=vin.img count=10000
 	dd if=boot of=vin.img conv=notrunc
-	dd if=kernel of=vin.img seek=27 conv=notrunc
+	dd if=kernel of=vin.img seek=3 conv=notrunc
 
 %.o: %.c
 	$(CC) $(CFLAGS) -O -I. -c $< -o $@
@@ -55,7 +54,7 @@ kernel: $(OBJS) initcode kernel.ld
 	$(LD) $(LDFLAGS) -T kernel.ld -o kernel $(OBJS) -b binary initcode
 
 qemu: vin.img
-	qemu-system-x86_64 -cpu qemu64,+la57 -serial mon:stdio -drive file=vin.img,index=0,media=disk,format=raw -m 2G
+	qemu-system-x86_64 -cpu qemu64,+la57 -serial mon:stdio -drive file=vin.img,index=0,media=disk,format=raw -m 1G
 
 clean:
 	rm -f *.o *.out boot vectors.S initcode kernel *.img

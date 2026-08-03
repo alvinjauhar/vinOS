@@ -3,6 +3,7 @@
 #include "defs.h"
 #include "mmu.h"
 #include "idt.h"
+#include "kernel.h"
 #include "list.h"
 #include "sched.h"
 #include "x86.h"
@@ -69,19 +70,42 @@ void set_idt(size_t i, uintptr_t offset, uint8_t type){
 
 void exception_handler(struct registers *r){
 
-	if (!current || (r->cs & DPL_USER) == 0){
+	if ((r->cs & DPL_USER) == 0){
 		cprintf("exception %d: %s \n", r->trap_no, exceptions[r->trap_no]);
 		cprintf("cs %p ss %p rcr2 %p error code %p\n", r->cs, r->ss, rcr2(), r->error_code);
 		cprintf("rsp %p rip %p rflags %p \n", r->rsp, r->rip, r->rflags);
 		for (;;);
 	}
 
-	cprintf("id %d \n", current->pid);
+	cprintf("id %d \n", current_task->pid);
 	cprintf("exception %d: %s \n", r->trap_no, exceptions[r->trap_no]);
 	cprintf("cs %p ss %p rcr2 %p error code %p\n", r->cs, r->ss, rcr2(), r->error_code);
 	cprintf("rsp %p rip %p rflags %p \n", r->rsp, r->rip, r->rflags);
 
-	exit();
+	sys_exit();
+}
+
+void page_fault_handler(struct registers *r){
+
+	if (!(r->error_code & PTE_U)){
+		cprintf("exception %d: %s at kernel mode\n", r->trap_no, exceptions[r->trap_no]);
+		cprintf("cs %p ss %p rcr2 %p error code %p\n", r->cs, r->ss, rcr2(), r->error_code);
+		cprintf("rsp %p rip %p rflags %p \n", r->rsp, r->rip, r->rflags);
+		for (;;);		
+	}
+
+	if (r->error_code & PTE_P){
+		if (page_fault_wp_page(current_task->pml5t, rcr2())){
+			cprintf("rcr2 %p \n", rcr2());
+			panic("page_fault handler: wp page\n");			
+		}
+
+	} else if (!(r->error_code & PTE_P)) {
+		if (page_fault_no_page(current_task->pml5t, rcr2())){
+			cprintf("rcr2 %p \n", rcr2());
+			panic("page fault handler: no page\n");		
+		}
+	}
 }
 
 void isr_handler(struct registers *r){
@@ -104,6 +128,8 @@ void idt_init(void){
 	for (size_t i = 0; i < 32; i++){
 		isr_install(i, exception_handler);
 	}
+
+	isr_install(14, page_fault_handler);
 	
 	asm volatile("lidt %0" :: "m" (pointer));
 }

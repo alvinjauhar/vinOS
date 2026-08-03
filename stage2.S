@@ -1,5 +1,6 @@
 
 #include "mmu.h"
+#include "memlayout.h"
 
 .code16
 .globl stage2
@@ -16,17 +17,43 @@ stage2:
 .code32
 start32:
 
-	mov $pml4t,%edi
-	movl $(pdpt + 0x3),(%edi)
+	xor %edi,%edi
+	mov $1024*4,%ecx
+	xor %eax,%eax
+	rep stosl
 
-	mov $pdpt,%edi
-	movl $(0x83),(%edi)
+	;# pml5t
+	xor %edi,%edi
+	movl $(0x1000 + PTE_P|PTE_W),(%edi)	;# 0
+	movl $(0x1000 + PTE_P|PTE_W),3136(%edi)	;# 392
+	movl $(0x1000 + PTE_P|PTE_W),4088(%edi)	;# 511
 
-	mov $pml4t,%eax
+	;# pml4t
+	movl $0x1000,%edi
+	movl $(0x2000 + PTE_P|PTE_W),(%edi)	;# 0
+	movl $(0x2000 + PTE_P|PTE_W),2184(%edi)	;# 273
+	movl $(0x2000 + PTE_P|PTE_W),4088(%edi)	;# 511
+
+	;# pdpt
+	movl $0x2000,%edi
+	movl $(0x3000 + PTE_P|PTE_W),(%edi)	;# 0
+	movl $(0x3000 + PTE_P|PTE_W),256(%edi)	;# 32
+	movl $(0x3000 + PTE_P|PTE_W),4080(%edi)	;# 510
+
+	;# pgdir
+	movl $0x3000,%edi
+	movl $(0x0 + PTE_P|PTE_W|PTE_PS),(%edi) ;# 0
+	movl $(0x00200000 + PTE_P|PTE_W|PTE_PS),8(%edi) ;# 1
+	movl $(0x10000000 + PTE_P|PTE_W|PTE_PS),1024(%edi)	;# 128
+	movl $(0x10200000 + PTE_P|PTE_W|PTE_PS),1032(%edi)
+	movl $(0x10400000 + PTE_P|PTE_W|PTE_PS),1040(%edi)
+	movl $(0x10600000 + PTE_P|PTE_W|PTE_PS),1048(%edi)
+
+	xor %eax,%eax
 	mov %eax,%cr3
 
 	mov %cr4,%eax
-	or $(1<<5),%eax
+	or $(1<<5|1<<12),%eax
 	mov %eax,%cr4
 
 	mov $0xc0000080,%ecx
@@ -35,7 +62,7 @@ start32:
 	wrmsr
 
 	mov %cr0,%eax
-	or $(1<<31),%eax
+	or $(1<<16|1<<31),%eax
 	mov %eax,%cr0
 
 	lgdt gdtdesc1
@@ -52,26 +79,8 @@ start64:
 
 	call bootmain
 
-	mov $error,%rsi
-	call print
-
 spin:
 	jmp spin
-
-.code64
-print:
-	mov $0xb8000,%rdi
-print_start:
-	mov (%rsi),%al
-	inc %rsi
-	or %al,%al
-	jz print_end
-	mov $0x0f,%ah
-	mov %ax,(%rdi)
-	add $2,%rdi
-	jmp print_start
-print_end:
-	ret
 
 gdt:
 	.quad 0
@@ -88,12 +97,3 @@ gdt1:
 gdtdesc1:
 	.word gdtdesc1 - gdt1 - 1
 	.quad gdt1
-
-error:
-	.asciz "error"
-
-.align PGSIZE
-pml4t:
-.zero PGSIZE
-pdpt:
-.zero PGSIZE

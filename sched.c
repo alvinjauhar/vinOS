@@ -11,8 +11,10 @@
 #include "idt.h"
 #include "x86.h"
 #include "msr.h"
+#include "signal.h"
 
-struct task head_task, init_task, *current;
+struct task head_task, idle_task;
+struct task *current_task;
 
 static struct {
 	uintptr_t kern_stack;
@@ -28,49 +30,49 @@ void task_init(void){
 
 	head_task.task.next = &head_task.task;
 	head_task.task.prev = &head_task.task;
-	list_add(&init_task.task, &head_task.task);
+	list_add(&idle_task.task, &head_task.task);
 
-	init_task.pid = next_pid++;
-	init_task.priority = 5;
-	init_task.pml5t = uvm_init(_binary_initcode_start, (size_t)_binary_initcode_size);
-
-	init_task.kstack = kmalloc(PGSIZE);
-
-	init_task.size = PGSIZE;
+	idle_task.pid = 0;
+	idle_task.kstack = kmalloc(PGSIZE);
+	idle_task.size = PGSIZE;
+	idle_task.pml5t = setup_kernel_page_table();
+	uvm_init(idle_task.pml5t, 
+	_binary_initcode_start, (size_t)_binary_initcode_size);
 
 	wrmsr(KERNEL_GS_BASE, (uintptr_t)&syscall_stack);
-
-	stack = (uintptr_t)init_task.kstack + KSTACKSIZE;
+	stack = (uintptr_t)idle_task.kstack + KSTACKSIZE;
 	syscall_stack.kern_stack = gdt.tss.rsp[0] = stack;
-	
+
 	stack -= sizeof(struct registers);
+	idle_task.regs = (void*)stack;
+	idle_task.regs->ss = (4 << 3) | DPL_USER;  
+	idle_task.regs->rsp = PGSIZE;
+	idle_task.regs->rflags = FL_IF;
+	idle_task.regs->cs = (5 << 3) | DPL_USER;
+	idle_task.regs->rip = 0;
 
-	init_task.regs = (void*)stack;
-	init_task.regs->ss = (4 << 3) | DPL_USER;  
-	init_task.regs->rsp = PGSIZE;
-	init_task.regs->rflags = FL_IF;
-	init_task.regs->cs = (5 << 3) | DPL_USER;
-	init_task.regs->rip = 0;
-
-	current = &init_task;
-	init_task.state = TASK_RUNNING;
+	current_task = &idle_task;
 }
 
 void switch_to_user(void){
 
-	asm volatile("mov %0,%%cr3\n" 
+	asm volatile("\n"
+				 "mov %0,%%cr3\n" 
 				 "push %1\n" 
 				 "push %2\n" 
 				 "push %3\n" 
 				 "push %4\n" 
 				 "push %5\n" 
-				 "iretq" 
-				 :: "r" (MM_V2P(init_task.pml5t)) ,"r" (init_task.regs->ss), 
-				 "r" (init_task.regs->rsp), "r" (init_task.regs->rflags),
-				 "r" (init_task.regs->cs), "r" (init_task.regs->rip));
+				 "iretq\n" :: 
+				 "r" (MM_V2P(idle_task.pml5t)) ,"r" (idle_task.regs->ss), 
+				 "r" (idle_task.regs->rsp), "r" (idle_task.regs->rflags),
+				 "r" (idle_task.regs->cs), "r" (idle_task.regs->rip));
 }
 
 void fork_return(void){
+	if (rdmsr(KERNEL_GS_BASE) != (uintptr_t)&syscall_stack){
+		asm volatile("swapgs");
+	}
 	lapiceoi();
 }
 
@@ -92,33 +94,28 @@ void fork_return1(void){
 				 "pop %rcx\n"
 				 "pop %rbx\n"
 				 "pop %rax\n"
-				 
+
 				 "add $16,%rsp\n"
 				 "iretq\n"
 				 );
 }
 
-int fork(void){
+int sys_fork(void){
 
 	struct task *newtask, *oldtask;
 	uintptr_t stack;
 	uint32_t pid;
 
-	oldtask = current;
-	newtask = kmalloc(sizeof(struct task));
-	if (!newtask) return -1;
+	oldtask = current_task;
+	if (!(newtask = kmalloc(sizeof(struct task)))) return -1;
 
 	list_add(&newtask->task, &head_task.task);
 	pid = newtask->pid = next_pid++;
-	newtask->priority = oldtask->priority;
-
-	newtask->kstack = kmalloc(PGSIZE);
-	if (!newtask->kstack) return -1;
-
+	newtask->priority = 5;
 	newtask->size = oldtask->size;
 
-	newtask->pml5t = setupkvm();
-	if (!newtask->pml5t) return -1;
+	if (!(newtask->kstack = kmalloc(PGSIZE))) return -1;
+	if (!(newtask->pml5t = setup_kernel_page_table())) return -1;
 
 	if (copy_mem(newtask->pml5t, oldtask->pml5t, oldtask->size) < 0)
 		return -1;
@@ -137,28 +134,65 @@ int fork(void){
 	newtask->context.rsp = (uintptr_t)stack;
 	newtask->context.rip = (uintptr_t)fork_return;
 
-	newtask->parent = oldtask;
+	newtask->parent = oldtask->pid;
 	newtask->state = TASK_RUNNABLE;
 
 	return pid;
 }
 
-int wait(void){
+int sys_wait(void){
 
-	return 0;
+	struct task *p, *curr = current_task;
+	bool have_child = false;
+	uint32_t pid;
+
+	while (true){
+		have_child = false;
+		for_all_task_except(p, &idle_task){
+			if (p->parent != curr->pid) continue;
+
+			have_child = true;
+			if (p->state == TASK_ZOMBIE){
+			 	pid = p->pid;
+			 	p->state = 0;
+			 	free_page_table(p->pml5t, p->size);
+			 	kfree(p->kstack, PGSIZE);
+			 	list_del(&p->task);
+			 	kfree(p, sizeof(*p));
+
+			 	return pid;
+			 }
+		}
+
+		if (!have_child){
+			return -1;
+		}
+
+		sys_pause();
+		curr->signal &= ~(1 << (SIGCHLD-1)); 
+	}
 }
 
-void exit(void){
+int sys_exit(void){
 
-	if (current == &init_task)
-		panic("init exiting");
+	struct task *p;
 
-	current->state = TASK_ZOMBIE;
+	if (current_task == &idle_task)
+		panic("idle exiting");
 
+	kill(current_task->parent, SIGCHLD);
+
+	for_all_task_except(p, &idle_task){
+		if (p->parent == current_task->pid){
+			p->parent = 1;
+		 	kill(1, SIGCHLD);
+		 }
+	}
+
+	current_task->state = TASK_ZOMBIE;
 	schedule();
+	return -1;
 }
-
-void switch_to(struct context *, struct context *);
 
 void switch_to(struct context *, struct context *){
 	asm volatile("pop 0(%rdi)\n" \
@@ -182,20 +216,22 @@ void switch_to(struct context *, struct context *){
 
 void schedule(void){
 
-	struct task *p, *next, *temp;
+	struct task *p, *next, *curr = current_task;
 	long highest_counter;
 	uintptr_t stack;
 
-	while (true){
+	for_all_task_except(p, &idle_task){
+		if (p->signal && p->state == TASK_INTERRUPTIBLE){
+			p->state = TASK_RUNNABLE;
+		}
+	}
 
+	while (true){
 		highest_counter = -1;
 		next = NULL;
-		for (p = list_entry(head_task.task.next, struct task, task.next);
-			 p != &head_task;
-			 p = list_entry(p->task.next, struct task, task.next)){
-
-			if (p->state == TASK_RUNNABLE && p->counter > highest_counter){
-	
+		for_all_task_except(p, &idle_task){
+			if (p->state == TASK_RUNNABLE &&
+			 p->counter > highest_counter){
 				highest_counter = p->counter;
 				next = p;
 			}
@@ -204,23 +240,20 @@ void schedule(void){
 			break;
 		}
 
-		for (p = list_entry(head_task.task.next, struct task, task.next);
-			 p != &head_task;
-			 p = list_entry(p->task.next, struct task, task.next)){
-		 
+		for_all_task_except(p, &idle_task){
 			p->counter += p->priority;
 		}
 	}
 
+	if (!next) next = &idle_task;
+
 	stack = (uintptr_t)next->kstack + KSTACKSIZE;
 	syscall_stack.kern_stack = gdt.tss.rsp[0] = stack;
+	lcr3(MM_V2P(next->pml5t));
 
-	asm volatile("mov %0,%%cr3" :: "r" (MM_V2P(next->pml5t)));
-
-	next->state = TASK_RUNNING;
-	temp = current;
-	current = next;
-	switch_to(&temp->context, &next->context);
+	current_task = next;
+	current_task->state = TASK_RUNNING;	
+	switch_to(&curr->context, &next->context);
 }
 
 void show_all_task(void){
@@ -231,15 +264,43 @@ void show_all_task(void){
 		[TASK_EMBRYO] "embryo", 
 		[TASK_RUNNABLE] "runnable",
 		[TASK_RUNNING] "running",
-		[TASK_SLEEPING] "sleeping",
+		[TASK_INTERRUPTIBLE] "interruptible",
+		[TASK_UNINTERRUPTIBLE] "uninterruptible",
 		[TASK_ZOMBIE] "zombie"
 	};
-
-	for (p = (list_entry(head_task.task.next, struct task, task.next));
-		 p != &head_task;
-	 	 p = list_entry(p->task.next, struct task, task.next)){
-
-		cprintf("pid %d state %s counter %d \n",
-		 p->pid, state[p->state], p->counter);
+	cprintf("current pid %d \n", current_task->pid);
+	for_all_task(p){
+		cprintf("pid %d state %s counter %d rsp %p rip %p\n",
+		 p->pid, state[p->state], p->counter,
+		  p->regs->rsp, p->regs->rip);
 	}
+	cprintf("\n");
+}
+
+void send_signal(struct task *p, uint32_t signal){
+
+	if (!p || signal < 1 || signal > 32) return;
+
+	p->signal |= 1 << (signal - 1);
+}
+
+void kill(uint32_t pid, uint32_t signal){
+
+	struct task *p;
+
+	for_all_task_except(p, &idle_task){
+		if (p->pid == pid){
+			send_signal(p, signal);
+		}
+	}
+}
+
+int sys_getpid(void){
+	return current_task->pid;
+}
+
+int sys_pause(void){
+	current_task->state = TASK_INTERRUPTIBLE;
+	schedule();
+	return 0;
 }

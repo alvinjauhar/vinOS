@@ -19,7 +19,6 @@
 volatile uint32_t *lapic;
 uint64_t ticks;
 
-
 void lapicw(uint32_t index, uint32_t value){
 	lapic[index] = value;
 }
@@ -35,30 +34,19 @@ void lapic_init(void){
 void lapiceoi(void){
 	lapicw(EOI, 0);
 }
-/*
-void timer_handler(struct registers *){
-
-	if (current && --current->counter > 0) {
-		lapiceoi();
-		return;
-	}
-
-	if (current){
-		current->state = TASK_RUNNABLE;
-		cprintf("timer %d \n", current->counter);
-		schedule();
-	}
-	lapiceoi();
-}
-*/
 
 void timer_handler(struct registers *){
 
 	ticks++;
 
-	if (current && current->counter-- == 0){
-		current->counter = 0;
-		current->state = TASK_RUNNABLE;
+	if (current_task == &idle_task){
+		schedule();
+	}
+
+	if (current_task && current_task->counter-- == 0 && 
+		current_task->state == TASK_RUNNING){
+		current_task->counter = 0;
+		current_task->state = TASK_RUNNABLE;
 		schedule();
 	}
 

@@ -7,8 +7,8 @@
 
 int sys_write(void){
 
-	char *addr = (char*)current->regs->rdi;
-	size_t n = current->regs->rsi;
+	char *addr = (char*)current_task->regs->rdi;
+	size_t n = current_task->regs->rsi;
 	
 	return consolewrite1(addr, n);
 }

@@ -1,6 +1,4 @@
 
-struct registers;
-
 // console.c
 void cls(void);
 int consolewrite1(char *, size_t );
@@ -13,6 +11,8 @@ void gdt_init(void);
 void tss_init(void);
 
 // idt.c
+struct registers;
+
 void idt_init(void);
 void isr_install(size_t, void (*)(struct registers*));
 void picinit(void);
@@ -35,11 +35,15 @@ void *kmalloc(size_t);
 void mm_init(void*, void*);
 
 // sched.c
-void exit(void);
-int fork(void);
+struct task;
+
+void kill(uint32_t, uint32_t);
 void schedule(void);
+void send_signal(struct task *, uint32_t);
 void show_all_task(void);
 void switch_to_user(void);
+int sys_exit(void);
+int sys_pause(void);
 void task_init(void);
 
 // string.c
@@ -55,9 +59,19 @@ void uartintr(void);
 void uartputc(int);
 
 // vm.c
+
+struct page_list;
+
+void *alloc_page(void);
 int copy_mem(uintptr_t*, uintptr_t*, size_t);
+void free_page(void *);
+void free_page_table(uintptr_t*, size_t);
 void kvm_init(void);
-void *setupkvm(void);
-void *uvm_init(void *addr, size_t size);
+int page_fault_no_page(uintptr_t *, uintptr_t);
+int page_fault_wp_page(uintptr_t *, uintptr_t);
+void remove_page_list(struct page_list*);
+struct page_list *search_page(void *);
+void *setup_kernel_page_table(void);
+void uvm_init(uintptr_t *, void *, size_t);
 
 #define NELEM(x) (sizeof(x)/sizeof(x[0]))

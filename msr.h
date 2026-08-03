@@ -4,3 +4,4 @@
 #define MSR_LSTAR		0xc0000082	// rip
 
 #define KERNEL_GS_BASE 	0xc0000102
+#define GS_BASE			0xc0000101

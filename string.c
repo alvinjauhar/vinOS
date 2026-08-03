@@ -30,9 +30,8 @@ void *memmove(void *dst, const void *src, size_t n){
 	uint8_t *d = dst;
 	const uint8_t *s = src;
 
-	if (d == s){
+	if (d == s)
 		return d;
-	}
 
 	if (s < d && s + n > d){
 		d += n, s += n;

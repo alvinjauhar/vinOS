@@ -14,23 +14,43 @@ static inline void insl(uint16_t port, void *addr, size_t n){
 }
 
 static inline void stosb(void *addr, uint8_t data, size_t n){
-	asm volatile("rep stosb" :: "D" (addr), "a" (data), "c" (n));
+	asm volatile("cld; rep stosb" :
+				 "=D" (addr), "=c" (n) :
+				 "0" (addr), "a" (data), "1" (n) :
+				 "memory", "cc");
 }
 
+/*
+static inline void stosb(void *addr, uint8_t data, size_t n){
+	asm volatile("cld; rep stosb" ::
+				 "D" (addr), "a" (data), "c" (n) :
+				 "memory", "cc");
+}
+*/
+
 static inline void stosw(void *addr, uint16_t data, size_t n){
-	asm volatile("rep stosw" :: "D" (addr), "a" (data), "c" (n));
+	asm volatile("cld; rep stosw" :
+				 "=D" (addr), "=c" (n) :
+				 "0" (addr), "a" (data), "1" (n) :
+				 "memory", "cc");
 }
 
 static inline void stosl(void *addr, uint32_t data, size_t n){
-	asm volatile("rep stosl" :: "D" (addr), "a" (data), "c" (n));
+	asm volatile("cld; rep stosl" :
+				 "=D" (addr), "=c" (n) :  
+				 "0" (addr), "a" (data), "1" (n) :
+				 "memory", "cc");
 }
 
 static inline void stosq(void *addr, uint64_t data, size_t n){
-	asm volatile("rep stosq" :: "D" (addr), "a" (data), "c" (n));
+	asm volatile("cld; rep stosq" :
+				 "=D" (addr), "=c" (n) :
+				 "0" (addr), "a" (data), "1" (n) :
+				 "memory", "cc");
 }
 
 static inline void lcr3(uintptr_t addr){
-	asm volatile("mov %0,%%cr3" :: "r" (addr));
+	asm volatile("mov %%rax,%%cr3" :: "a" (addr));
 }
 
 static inline uint64_t rcr2(void){
