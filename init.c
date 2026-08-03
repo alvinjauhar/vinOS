@@ -12,7 +12,7 @@ int main(void){
 			pid = fork();
 			if (pid == 0){
 				printf("child %d created \n", getpid());
-//				exit();
+				exit();
 			} else if (pid > 0){
 				printf("parent %d creating child %d \n", getpid(), pid);
 				pid = wait();
