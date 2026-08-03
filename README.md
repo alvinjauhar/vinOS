@@ -10,9 +10,9 @@ operating system capable of running a few simple games.
 ### **Core System**
 - **Custom Bootloader** - Handles transition from 16-bit real mode to 64-bit long mode.
 - **VGA Text Mode** - Provides a basic console output via direct VGA buffer manipulation.
-- **Physical Memory Allocator** - Implements 'kalloc()', 'kfree()' using the buddy algorithm.
+- **Physical Memory Allocator** - Implements `kmalloc()`, `kfree()` using the buddy algorithm.
 - **5-Level Paging** - Supports the modern x86-64 paging hierarchy.
-- **Simple Process Management** - Implements 'fork()' with copy-on-write, 'exit()', 'wait()' system calls.
+- **Simple Process Management** - Implements `fork()` with copy-on-write, `exit()`, `wait()` system calls.
 - **Process Scheduler** - Priority-based preemptive scheduler.
 
 ### ***Screenshots***
