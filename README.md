@@ -16,8 +16,7 @@ operating system capable of running a few simple games.
 - **Process Scheduler** - Priority-based preemptive scheduler.
 
 ### ***Screenshots***
-![VinOS Boot Screen](screenshots/fork_wait_exit_demo.png)
-*VinOS booting and demonstrating fork(), exit(), and wait() system calls.*
+![VinOS](screenshots/fork_wait_exit_demo.png)
 
 ### **Technical Stack**
 - **Languages**: C (kernel), AT&T Assembly (bootloader)
